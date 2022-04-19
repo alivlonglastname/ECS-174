@@ -1,11 +1,7 @@
 import numpy as np
 from numpy import asarray
 from numpy import savetxt
-import scipy as sc
-from scipy import signal
-from skimage import filters
-from PIL import Image
-from matplotlib import pyplot as plt
+# from PIL import Image
 import cv2
 
 
@@ -33,8 +29,14 @@ def separable_gaussian(sigma):
     for i in range(filter_size):
         xy = i - filter_size // 2
         xfilter[i] = 1.0 / np.sqrt((2 * np.pi * sigma ** 2)) * np.exp(-(xy ** 2) / (2 * sigma ** 2))
-        yfilter[i,0] = 1.0 / np.sqrt((2 * np.pi * sigma ** 2)) * np.exp(-(xy ** 2) / (2 * sigma ** 2))
+        yfilter[i, 0] = 1.0 / np.sqrt((2 * np.pi * sigma ** 2)) * np.exp(-(xy ** 2) / (2 * sigma ** 2))
     return xfilter, yfilter
+
+
+def sobelfilter():
+    gx = np.array([-1, 0, 1], [-2, 0, 2], [-1, 0, 1])
+    gy = np.array([-1, -2, -1], [0, 0, 0], [-1, 2, 1])
+    return gx, gy
 
 
 def convolution1(image, filter):
@@ -45,17 +47,17 @@ def convolution1(image, filter):
     length = dimensionsImg[1]
     kernel = dimensionsFltr[0]
 
-    result = np.zeros((height - kernel, length - kernel, 3))
-    for heightIndex in range(height - kernel - 1):
-        for lenIndex in range(length - kernel - 1):
+    result = np.zeros((height - kernel + 1, length - kernel + 1, 3))
+    for heightIndex in range(height - kernel + 1):
+        for lenIndex in range(length - kernel + 1):
             # Since we're dealing with a RGB image (3d array), we convolve each array separately
-            subset1 = np.array(image)[heightIndex:heightIndex + kernel, lenIndex:lenIndex + kernel, 0]
-            subset2 = np.array(image)[heightIndex:heightIndex + kernel, lenIndex:lenIndex + kernel, 1]
-            subset3 = np.array(image)[heightIndex:heightIndex + kernel, lenIndex:lenIndex + kernel, 2]
+            subsetR = np.array(image)[heightIndex:(heightIndex + kernel), lenIndex:(lenIndex + kernel), 0]
+            subsetG = np.array(image)[heightIndex:(heightIndex + kernel), lenIndex:(lenIndex + kernel), 1]
+            subsetB = np.array(image)[heightIndex:(heightIndex + kernel), lenIndex:(lenIndex + kernel), 2]
             # I'm not sure why I have to assign the values in reverse, but it seems to fix issues so...
-            result[heightIndex, lenIndex, 2] = np.sum(np.multiply(subset1, filter))
-            result[heightIndex, lenIndex, 1] = np.sum(np.multiply(subset2, filter))
-            result[heightIndex, lenIndex, 0] = np.sum(np.multiply(subset3, filter))
+            result[heightIndex, lenIndex, 0] = np.sum(np.multiply(subsetR, filter))
+            result[heightIndex, lenIndex, 1] = np.sum(np.multiply(subsetG, filter))
+            result[heightIndex, lenIndex, 2] = np.sum(np.multiply(subsetB, filter))
 
     return result
 
@@ -74,50 +76,86 @@ def convolution2(image, filter, dir):
     else:
         kernely = dimensionsFltr[0]
 
-    result = np.zeros((height - kernelx, length - kernely, 3))
-    for heightIndex in range(height - max(kernelx, kernely) - 1):
-        for lenIndex in range(length - max(kernelx, kernely) - 1):
+    result = np.zeros((height - kernely + 1, length - kernelx + 1, 3))
+    d = result.shape
+    for heightIndex in range(height - kernely + 1):
+        for lenIndex in range(length - kernelx + 1):
             # Since we're dealing with a RGB image (3d array), we convolve each array separately
-            subset1 = np.array(image)[heightIndex:heightIndex + kernely, lenIndex:lenIndex + kernelx, 0]
-            subset2 = np.array(image)[heightIndex:heightIndex + kernely, lenIndex:lenIndex + kernelx, 1]
-            subset3 = np.array(image)[heightIndex:heightIndex + kernely, lenIndex:lenIndex + kernelx, 2]
+            subsetR = np.array(image)[heightIndex:(heightIndex + kernely), lenIndex:(lenIndex + kernelx), 0]
+            subsetG = np.array(image)[heightIndex:(heightIndex + kernely), lenIndex:(lenIndex + kernelx), 1]
+            subsetB = np.array(image)[heightIndex:(heightIndex + kernely), lenIndex:(lenIndex + kernelx), 2]
 
-            result[heightIndex, lenIndex, 2] = np.sum(np.multiply(subset1, filter))
-            result[heightIndex, lenIndex, 1] = np.sum(np.multiply(subset2, filter))
-            result[heightIndex, lenIndex, 0] = np.sum(np.multiply(subset3, filter))
+            result[heightIndex, lenIndex, 0] = np.sum(np.multiply(subsetR, filter))
+            result[heightIndex, lenIndex, 1] = np.sum(np.multiply(subsetG, filter))
+            result[heightIndex, lenIndex, 2] = np.sum(np.multiply(subsetB, filter))
 
     return result
 
 
-def HW1_1(name="Seattle.jpg"):
-    img = cv2.imread(name)
-    gFilter = gaussian(4)
+def GaussianBlurImage(image, sigma):
+    print("Running 1_1")
+    img = cv2.imread(image)
+    gFilter = gaussian(sigma)
     image_array = convolution1(img, gFilter)
-    image = Image.fromarray(np.uint8(image_array))
-    image.save("1.png")
+    cv2.imwrite("1.png", image_array)
     print("Completed 1_1")
 
-def HW1_2(name="Seattle.jpg"):
-    img = cv2.imread(name)
-    [xG, yG] = separable_gaussian(4)
+
+def SeparableGaussianBlurImage(image, sigma):
+    print("Running 1_2")
+    img = cv2.imread(image)
+    [xG, yG] = separable_gaussian(sigma)
     xImage = convolution2(img, xG, "x")
-    #yImage = convolution2(img, yG, "y") #
-    #image = Image.fromarray(np.uint8(yImage)) #
-    #image2 = Image.fromarray(np.uint8(xImage)) #
-    #image.save("y.png") #
-    #image2.save("x.png") #
     yImage = convolution2(xImage, yG, "y")
-    dim = yImage.shape
-    # i dont know if the program im using is fualty or what, but it keeps switching around some values when saving.
-    # so im manually swithcing them back :/
-    temp = np.zeros((dim[0], dim[1], dim[2]))
-    temp[0:dim[0], 0:dim[1], 0] = yImage[0:dim[0], 0:dim[1], 0]
-    yImage[0:dim[0]-1, 0:dim[1]-1, 0] = yImage[0:dim[0]-1, 0:dim[1]-1, 2]
-    yImage[0:dim[0]-1, 0:dim[1]-1, 2] = temp[0:dim[0]-1, 0:dim[1]-1, 0]
-    image = Image.fromarray(np.uint8(yImage))
-    image.save("2.png")
+    cv2.imwrite("2.png", yImage)
     print("Completed 1_2")
 
 
-#HW1_1("img.jpg")
-HW1_2("img.jpg")
+def SharpenImage(image, sigma, alpha):
+    print("Running 1_3")
+    img = cv2.imread(image)
+    gFilter = gaussian(sigma)
+    dim = gFilter.shape  # need to know how much smaller the new image should be
+    dimImg = img.shape
+    blur = convolution1(img, gFilter)
+    subset = img[(dim[0] // 2):(dimImg[0] - (dim[0] // 2)), (dim[1] // 2):(dimImg[1] - (dim[1] // 2))]
+    sharpness = np.multiply(alpha, np.subtract(subset, blur))
+    sharpImg = np.add(subset, sharpness)
+    cv2.imwrite("3.png", sharpImg)
+    print("Completed 1_3")
+
+
+def SobelImage(image):
+    print("Running 1_4")
+    img = cv2.cvtColor(cv2.imread(image), cv2.COLOR_BGR2GRAY)
+    gx, gy = sobelfilter()
+    imgGx = convolution1(img, gx)
+    imgGy = convolution1(img, gy)
+    magnitude = np.sqrt(np.square(imgGx), np.square(imgGx))
+    magnitude *= 255.0 / magnitude.max()
+    cv2.imwrite("5a.png", magnitude)
+    cv2.imwrite("5b.png", np.arctan(np.divide(imgGy, imgGx)))
+    print("Completed 1_4")
+
+
+# def BilinearInterpolation(image, x, y):
+
+
+def nearestNeighbor(image, scale):
+    img = cv2.cvtColor(cv2.imread(image), cv2.COLOR_BGR2GRAY)
+    dim = img.shape
+    result = np.zeros((dim[0] * scale, dim[1] * scale))
+    for xImgIndex in range(dim[0]):
+        for yImgIndex in range(dim[1]):
+            for i in range(scale):
+                for j in range(scale):
+                    result[xImgIndex * scale + i, yImgIndex * scale + j] = img[xImgIndex, yImgIndex]
+
+
+    cv2.imwrite("5a.png", result)
+
+# GaussianBlurImage("Seattle.jpg", 4)  # This is working
+SeparableGaussianBlurImage("Seattle.jpg", 4)  # This is working
+
+# SharpenImage("Yosemite.png", 1, 5)  # This is also working
+#nearestNeighbor("moire_small.jpg", 2)
